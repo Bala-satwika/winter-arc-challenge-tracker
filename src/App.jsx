@@ -76,7 +76,21 @@ function App() {
   const [completions, setCompletions] = useState({});
   const [comments, setComments] = useState({});
 
-  const [selectedDate, setSelectedDate] = useState(formatDate(START_DATE));
+ const initialDate = () => {
+  const currentDate = formatDate(new Date());
+
+  if (currentDate < formatDate(START_DATE)) {
+    return formatDate(START_DATE);
+  }
+
+  if (currentDate > formatDate(END_DATE)) {
+    return formatDate(END_DATE);
+  }
+
+  return currentDate;
+};
+
+const [selectedDate, setSelectedDate] = useState(initialDate);
 
   const [newTask, setNewTask] = useState("");
   const [editingTaskId, setEditingTaskId] = useState(null);

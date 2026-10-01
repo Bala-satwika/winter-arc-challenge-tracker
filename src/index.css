@@ -223,11 +223,11 @@ button {
 /* ---------------- MAIN TODO ---------------- */
 
 .main-todo-card {
-  background: white;
-  border: 1px solid #e5e5df;
+  background: #fff7f2;
+  border: 1px solid #f3e2d8;
   border-radius: 24px;
   padding: 30px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.035);
+   box-shadow: 0 8px 30px rgba(80, 50, 30, 0.06);
 }
 
 .todo-header {
@@ -317,10 +317,11 @@ button {
 
 .task-item {
   display: flex;
+  background: rgba(255, 255, 255, 0.82);
   align-items: flex-start;
   gap: 14px;
   min-height: 56px;
-  border: 1px solid #e8e8e3;
+  border: 1px solid rgba(230, 210, 200, 0.7);
   padding: 9px 13px;
   border-radius: 13px;
   transition:
