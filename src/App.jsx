@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+
 import {
   signInWithEmailAndPassword,
   onAuthStateChanged,
@@ -73,10 +74,9 @@ function App() {
 
   const [tasks, setTasks] = useState([]);
   const [completions, setCompletions] = useState({});
+  const [comments, setComments] = useState({});
 
-  const [selectedDate, setSelectedDate] = useState(
-    formatDate(START_DATE)
-  );
+  const [selectedDate, setSelectedDate] = useState(formatDate(START_DATE));
 
   const [newTask, setNewTask] = useState("");
   const [editingTaskId, setEditingTaskId] = useState(null);
@@ -105,8 +105,8 @@ function App() {
         const userSnapshot = await getDocs(
           query(
             collection(db, "users"),
-            where("__name__", "==", currentUser.uid)
-          )
+            where("__name__", "==", currentUser.uid),
+          ),
         );
 
         if (!userSnapshot.empty) {
@@ -146,7 +146,7 @@ function App() {
     try {
       const tasksQuery = query(
         collection(db, "tasks"),
-        where("userId", "==", user.uid)
+        where("userId", "==", user.uid),
       );
 
       const tasksSnapshot = await getDocs(tasksQuery);
@@ -160,7 +160,7 @@ function App() {
 
       const completionsQuery = query(
         collection(db, "completions"),
-        where("userId", "==", user.uid)
+        where("userId", "==", user.uid),
       );
 
       const completionsSnapshot = await getDocs(completionsQuery);
@@ -182,6 +182,26 @@ function App() {
       setError("Unable to load your data.");
     } finally {
       setDataLoading(false);
+
+      const commentsQuery = query(
+        collection(db, "comments"),
+        where("userId", "==", user.uid),
+      );
+
+      const commentsSnapshot = await getDocs(commentsQuery);
+
+      const loadedComments = {};
+
+      commentsSnapshot.docs.forEach((item) => {
+        const data = item.data();
+
+        loadedComments[`${data.date}_${data.taskId}`] = {
+          id: item.id,
+          ...data,
+        };
+      });
+
+      setComments(loadedComments);
     }
   };
 
@@ -194,11 +214,7 @@ function App() {
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(
-        auth,
-        selectedPerson.email,
-        password
-      );
+      await signInWithEmailAndPassword(auth, selectedPerson.email, password);
 
       setPassword("");
     } catch (err) {
@@ -219,27 +235,26 @@ function App() {
   };
 
   /* ---------------- DATE HELPERS ---------------- */
- const now = new Date();
+  const now = new Date();
   const today = formatDate(now);
 
   const isPastDate = selectedDate < today;
 
- const selectedDayTasks = tasks.filter((task) => {
-  const taskStartDate =
-    task.startDate || formatDate(START_DATE);
+  const selectedDayTasks = tasks.filter((task) => {
+    const taskStartDate = task.startDate || formatDate(START_DATE);
 
-  return taskStartDate <= selectedDate;
-});
-
-const selectedDayCompleted =
-  selectedDayTasks.length > 0 &&
-  selectedDayTasks.every((task) => {
-    const key = `${selectedDate}_${task.id}`;
-
-    return completions[key]?.completed;
+    return taskStartDate <= selectedDate;
   });
 
-const selectedDayLocked = isPastDate
+  const selectedDayCompleted =
+    selectedDayTasks.length > 0 &&
+    selectedDayTasks.every((task) => {
+      const key = `${selectedDate}_${task.id}`;
+
+      return completions[key]?.completed;
+    });
+
+  const selectedDayLocked = isPastDate;
 
   /* ---------------- ADD TASK ---------------- */
 
@@ -253,12 +268,12 @@ const selectedDayLocked = isPastDate
     /*
      * Don't change historical days.
      */
-   if (selectedDayLocked) {
-  setError(
-    "This day is completed and locked 🔒. You cannot change its goals."
-  );
-  return;
-}
+    if (selectedDayLocked) {
+      setError(
+        "This day is completed and locked 🔒. You cannot change its goals.",
+      );
+      return;
+    }
 
     try {
       const taskRef = await addDoc(collection(db, "tasks"), {
@@ -288,16 +303,14 @@ const selectedDayLocked = isPastDate
   /* ---------------- EDIT TASK ---------------- */
 
   const startEditing = (task) => {
-  if (selectedDayLocked) {
-    setError(
-      "This day is completed and locked. 🔒"
-    );
-    return;
-  }
+    if (selectedDayLocked) {
+      setError("This day is completed and locked. 🔒");
+      return;
+    }
 
-  setEditingTaskId(task.id);
-  setEditingTaskTitle(task.title);
-};
+    setEditingTaskId(task.id);
+    setEditingTaskTitle(task.title);
+  };
 
   const cancelEditing = () => {
     setEditingTaskId(null);
@@ -316,10 +329,8 @@ const selectedDayLocked = isPastDate
 
       setTasks((previous) =>
         previous.map((task) =>
-          task.id === taskId
-            ? { ...task, title }
-            : task
-        )
+          task.id === taskId ? { ...task, title } : task,
+        ),
       );
 
       cancelEditing();
@@ -332,68 +343,126 @@ const selectedDayLocked = isPastDate
   /* ---------------- DELETE TASK ---------------- */
 
   const handleDeleteTask = async (taskId) => {
-  if (selectedDayLocked) {
-    setError(
-      "This day is completed and locked."
-    );
-    return;
-  }
+    if (selectedDayLocked) {
+      setError("This day is completed and locked.");
+      return;
+    }
 
-  const confirmed = window.confirm(
-    "Are you sure you want to delete this to-do?"
-  );
-
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    await deleteDoc(doc(db, "tasks", taskId));
-
-    setTasks((previous) =>
-      previous.filter((task) => task.id !== taskId)
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this to-do?",
     );
 
-    setCompletions((previous) => {
-      const updated = { ...previous };
+    if (!confirmed) {
+      return;
+    }
 
-      Object.keys(updated).forEach((key) => {
-        if (updated[key].taskId === taskId) {
-          delete updated[key];
-        }
+    try {
+      await deleteDoc(doc(db, "tasks", taskId));
+
+      setTasks((previous) => previous.filter((task) => task.id !== taskId));
+
+      setCompletions((previous) => {
+        const updated = { ...previous };
+
+        Object.keys(updated).forEach((key) => {
+          if (updated[key].taskId === taskId) {
+            delete updated[key];
+          }
+        });
+
+        return updated;
       });
+    } catch (err) {
+      console.error(err);
+      setError("Could not delete the goal.");
+    }
+  };
 
-      return updated;
-    });
-  } catch (err) {
-    console.error(err);
-    setError("Could not delete the goal.");
-  }
-};
+  const handleSaveComment = async (taskId, commentText) => {
+    if (isPastDate) {
+      setError("Past days are locked.");
+      return;
+    }
+
+    if (!user) return;
+
+    const text = commentText.trim();
+
+    const key = `${selectedDate}_${taskId}`;
+    const existingComment = comments[key];
+
+    try {
+      if (!text) {
+        if (existingComment) {
+          await deleteDoc(doc(db, "comments", existingComment.id));
+
+          setComments((previous) => {
+            const updated = { ...previous };
+            delete updated[key];
+            return updated;
+          });
+        }
+
+        return;
+      }
+
+      if (existingComment) {
+        await updateDoc(doc(db, "comments", existingComment.id), {
+          comment: text,
+        });
+
+        setComments((previous) => ({
+          ...previous,
+          [key]: {
+            ...previous[key],
+            comment: text,
+          },
+        }));
+      } else {
+        const commentRef = await addDoc(collection(db, "comments"), {
+          userId: user.uid,
+          taskId,
+          date: selectedDate,
+          comment: text,
+          createdAt: serverTimestamp(),
+        });
+
+        setComments((previous) => ({
+          ...previous,
+          [key]: {
+            id: commentRef.id,
+            userId: user.uid,
+            taskId,
+            date: selectedDate,
+            comment: text,
+          },
+        }));
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Could not save the comment.");
+    }
+  };
 
   /* ---------------- TOGGLE TASK ---------------- */
 
   const handleToggleTask = async (taskId) => {
-
     if (selectedDate > today) {
-    setError("You cannot complete goals for a future day.");
-    return;
-  }
+      setError("You cannot complete goals for a future day.");
+      return;
+    }
 
-  if (isPastDate) {
-    setError("Past days are locked.");
-    return;
-  }
+    if (isPastDate) {
+      setError("Past days are locked.");
+      return;
+    }
 
-  const key = `${selectedDate}_${taskId}`;
-  const existingCompletion = completions[key];
-    
+    const key = `${selectedDate}_${taskId}`;
+    const existingCompletion = completions[key];
 
     try {
       if (existingCompletion) {
-        await deleteDoc(
-          doc(db, "completions", existingCompletion.id)
-        );
+        await deleteDoc(doc(db, "completions", existingCompletion.id));
 
         setCompletions((previous) => {
           const updated = { ...previous };
@@ -427,14 +496,13 @@ const selectedDayLocked = isPastDate
       /*
        * Celebration when the whole day is completed.
        */
-      const completedCount =
-        selectedDayTasks.filter((task) => {
-          if (task.id === taskId) return true;
+      const completedCount = selectedDayTasks.filter((task) => {
+        if (task.id === taskId) return true;
 
-          const taskKey = `${selectedDate}_${task.id}`;
+        const taskKey = `${selectedDate}_${task.id}`;
 
-          return completions[taskKey]?.completed;
-        }).length;
+        return completions[taskKey]?.completed;
+      }).length;
 
       if (
         selectedDayTasks.length > 0 &&
@@ -463,38 +531,28 @@ const selectedDayLocked = isPastDate
   const selectedProgress =
     selectedDayTasks.length === 0
       ? 0
-      : Math.round(
-          (selectedCompletedCount /
-            selectedDayTasks.length) *
-            100
-        );
+      : Math.round((selectedCompletedCount / selectedDayTasks.length) * 100);
 
-  const totalPossible = challengeDates.reduce(
-    (total, date) => {
-      const dateString = formatDate(date);
+  const totalPossible = challengeDates.reduce((total, date) => {
+    const dateString = formatDate(date);
 
-      const activeTaskCount = tasks.filter((task) => {
-        const taskStartDate =
-          task.startDate || formatDate(START_DATE);
+    const activeTaskCount = tasks.filter((task) => {
+      const taskStartDate = task.startDate || formatDate(START_DATE);
 
-        return taskStartDate <= dateString;
-      }).length;
+      return taskStartDate <= dateString;
+    }).length;
 
-      return total + activeTaskCount;
-    },
-    0
-  );
+    return total + activeTaskCount;
+  }, 0);
 
   const totalCompleted = Object.values(completions).filter(
-    (item) => item.completed
+    (item) => item.completed,
   ).length;
 
   const overallProgress =
     totalPossible === 0
       ? 0
-      : Math.round(
-          (totalCompleted / totalPossible) * 100
-        );
+      : Math.round((totalCompleted / totalPossible) * 100);
 
   /* ---------------- STREAK ---------------- */
 
@@ -515,8 +573,7 @@ const selectedDayLocked = isPastDate
       const dateString = formatDate(checkDate);
 
       const activeTasks = tasks.filter((task) => {
-        const taskStartDate =
-          task.startDate || formatDate(START_DATE);
+        const taskStartDate = task.startDate || formatDate(START_DATE);
 
         return taskStartDate <= dateString;
       });
@@ -535,9 +592,7 @@ const selectedDayLocked = isPastDate
         break;
       }
 
-      checkDate.setDate(
-        checkDate.getDate() - 1
-      );
+      checkDate.setDate(checkDate.getDate() - 1);
     }
 
     return count;
@@ -570,9 +625,7 @@ const selectedDayLocked = isPastDate
 
             <h1>90 Day Challenge</h1>
 
-            <p className="login-subtitle">
-              October 1 – December 31, 2026
-            </p>
+            <p className="login-subtitle">October 1 – December 31, 2026</p>
 
             <form onSubmit={handleLogin}>
               <label>Who are you?</label>
@@ -581,9 +634,7 @@ const selectedDayLocked = isPastDate
                 value={selectedPerson.email}
                 onChange={(event) => {
                   const person = people.find(
-                    (item) =>
-                      item.email ===
-                      event.target.value
+                    (item) => item.email === event.target.value,
                   );
 
                   setSelectedPerson(person);
@@ -591,10 +642,7 @@ const selectedDayLocked = isPastDate
                 }}
               >
                 {people.map((person) => (
-                  <option
-                    key={person.email}
-                    value={person.email}
-                  >
+                  <option key={person.email} value={person.email}>
                     {person.name}
                   </option>
                 ))}
@@ -605,27 +653,19 @@ const selectedDayLocked = isPastDate
               <input
                 type="password"
                 value={password}
-                onChange={(event) =>
-                  setPassword(event.target.value)
-                }
+                onChange={(event) => setPassword(event.target.value)}
                 placeholder="Enter password"
                 required
               />
 
-              {error && (
-                <div className="error-message">
-                  {error}
-                </div>
-              )}
+              {error && <div className="error-message">{error}</div>}
 
               <button
                 className="primary-button"
                 type="submit"
                 disabled={loading}
               >
-                {loading
-                  ? "Signing in..."
-                  : "Start Challenge"}
+                {loading ? "Signing in..." : "Start Challenge"}
               </button>
             </form>
           </div>
@@ -641,9 +681,7 @@ const selectedDayLocked = isPastDate
       {celebration && (
         <div className="celebration">
           <div className="celebration-card">
-            <div className="celebration-icon">
-              ✓
-            </div>
+            <div className="celebration-icon">✓</div>
 
             <h2>You did it! 🎉</h2>
 
@@ -658,13 +696,9 @@ const selectedDayLocked = isPastDate
 
       <header className="topbar">
         <div>
-          <div className="brand">
-            90 Day Challenge
-          </div>
+          <div className="brand">90 Day Challenge</div>
 
-          <div className="brand-subtitle">
-            October 1 – December 31, 2026
-          </div>
+          <div className="brand-subtitle">October 1 – December 31, 2026</div>
         </div>
 
         <div className="profile-area">
@@ -672,21 +706,14 @@ const selectedDayLocked = isPastDate
             {profile?.name || selectedPerson.name}
           </div>
 
-          <button
-            className="logout-button"
-            onClick={handleLogout}
-          >
+          <button className="logout-button" onClick={handleLogout}>
             Logout
           </button>
         </div>
       </header>
 
       <main className="dashboard">
-        {error && (
-          <div className="error-banner">
-            {error}
-          </div>
-        )}
+        {error && <div className="error-banner">{error}</div>}
 
         <section className="welcome-section">
           <div>
@@ -694,20 +721,13 @@ const selectedDayLocked = isPastDate
               DAY{" "}
               {Math.max(
                 1,
-                Math.floor(
-                  (new Date() - START_DATE) /
-                    (1000 * 60 * 60 * 24)
-                ) + 1
+                Math.floor((new Date() - START_DATE) / (1000 * 60 * 60 * 24)) +
+                  1,
               )}{" "}
               OF 92
             </span>
 
-            <h1>
-              Hey,{" "}
-              {profile?.name ||
-                selectedPerson.name}{" "}
-              👋
-            </h1>
+            <h1>Hey, {profile?.name || selectedPerson.name} 👋</h1>
 
             <p>{motivation}</p>
           </div>
@@ -724,8 +744,7 @@ const selectedDayLocked = isPastDate
             <span>Today's progress</span>
             <strong>{selectedProgress}%</strong>
             <small>
-              {selectedCompletedCount}/
-              {selectedDayTasks.length}
+              {selectedCompletedCount}/{selectedDayTasks.length}
             </small>
           </div>
 
@@ -740,33 +759,30 @@ const selectedDayLocked = isPastDate
           <div className="todo-header">
             <div>
               <span className="eyebrow">
-                {isPastDate
-                  ? "COMPLETED DAY"
-                  : "TODAY'S GOALS"}
+                {isPastDate ? "COMPLETED DAY" : "TODAY'S GOALS"}
               </span>
 
               <h2>
-                {new Date(
-                  `${selectedDate}T00:00:00`
-                ).toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
+                {new Date(`${selectedDate}T00:00:00`).toLocaleDateString(
+                  "en-US",
+                  {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                  },
+                )}
               </h2>
 
               <p>
-  {selectedCompletedCount} of{" "}
-  {selectedDayTasks.length} goals completed
-  {selectedDayCompleted && " • Day completed "}
-</p>
+                {selectedCompletedCount} of {selectedDayTasks.length} goals
+                completed
+                {selectedDayCompleted && " • Day completed "}
+              </p>
             </div>
 
             <div
               className={`big-progress ${
-                selectedProgress === 100
-                  ? "finished"
-                  : ""
+                selectedProgress === 100 ? "finished" : ""
               }`}
             >
               {selectedProgress}%
@@ -783,109 +799,102 @@ const selectedDayLocked = isPastDate
           </div>
 
           {!isPastDate && (
-            <form
-              className="add-task-form"
-              onSubmit={handleAddTask}
-            >
+            <form className="add-task-form" onSubmit={handleAddTask}>
               <input
                 value={newTask}
-                onChange={(event) =>
-                  setNewTask(event.target.value)
-                }
+                onChange={(event) => setNewTask(event.target.value)}
                 placeholder="What do you want to accomplish?"
               />
 
-              <button type="submit">
-                Add goal
-              </button>
+              <button type="submit">Add goal</button>
             </form>
           )}
 
           {dataLoading ? (
-            <div className="empty-state">
-              Loading your goals...
-            </div>
+            <div className="empty-state">Loading your goals...</div>
           ) : selectedDayTasks.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">✦</div>
 
               <h3>No goals yet</h3>
 
-              <p>
-                Add your first goal for this
-                challenge.
-              </p>
+              <p>Add your first goal for this challenge.</p>
             </div>
           ) : (
             <div className="task-list">
               {selectedDayTasks.map((task) => {
                 const key = `${selectedDate}_${task.id}`;
 
-                const completed =
-                  completions[key]?.completed;
+                const completed = completions[key]?.completed;
 
-                const isEditing =
-                  editingTaskId === task.id;
+                const isEditing = editingTaskId === task.id;
 
                 return (
                   <div
-                    className={`task-item ${
-                      completed
-                        ? "completed"
-                        : ""
-                    }`}
+                    className={`task-item ${completed ? "completed" : ""}`}
                     key={task.id}
                   >
                     <button
-  className={`task-checkbox ${
-    completed ? "checked" : ""
-  } ${
-    selectedDate > today ? "disabled" : ""
-  }`}
-  onClick={() =>
-    handleToggleTask(task.id)
-  }
-  disabled={selectedDate > today}
->
-  {completed ? "✓" : ""}
-</button>
+                      className={`task-checkbox ${completed ? "checked" : ""} ${
+                        selectedDate > today ? "disabled" : ""
+                      }`}
+                      onClick={() => handleToggleTask(task.id)}
+                      disabled={selectedDate > today}
+                    >
+                      {completed ? "✓" : ""}
+                    </button>
 
                     {isEditing ? (
                       <input
                         className="edit-task-input"
                         value={editingTaskTitle}
                         onChange={(event) =>
-                          setEditingTaskTitle(
-                            event.target.value
-                          )
+                          setEditingTaskTitle(event.target.value)
                         }
                         autoFocus
                       />
                     ) : (
-                      <span className="task-title">
-                        {task.title}
-                      </span>
+                      <div className="task-content">
+                        {isEditing ? (
+                          <input
+                            className="edit-task-input"
+                            value={editingTaskTitle}
+                            onChange={(event) =>
+                              setEditingTaskTitle(event.target.value)
+                            }
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="task-title">{task.title}</span>
+                        )}
+
+                        <div className="comment-section">
+                          <textarea
+                            className="comment-input"
+                            placeholder="Add a comment..."
+                            defaultValue={comments[key]?.comment || ""}
+                            disabled={isPastDate}
+                            onBlur={(event) =>
+                              handleSaveComment(task.id, event.target.value)
+                            }
+                          />
+                        </div>
+                      </div>
                     )}
 
                     {!selectedDayLocked &&
-  (isEditing ? (
+                      (isEditing ? (
                         <div className="edit-actions">
                           <button
                             className="save-button"
-                            onClick={() =>
-                              saveEditedTask(
-                                task.id
-                              )
-                            }
+                            onClick={() => saveEditedTask(task.id)}
                           >
                             Save
                           </button>
 
                           <button
                             className="cancel-button"
-                            onClick={
-                              cancelEditing
-                            }
+                            onClick={cancelEditing}
                           >
                             Cancel
                           </button>
@@ -894,20 +903,14 @@ const selectedDayLocked = isPastDate
                         <div className="task-actions">
                           <button
                             className="edit-button"
-                            onClick={() =>
-                              startEditing(task)
-                            }
+                            onClick={() => startEditing(task)}
                           >
                             ✎
                           </button>
 
                           <button
                             className="delete-task"
-                            onClick={() =>
-                              handleDeleteTask(
-                                task.id
-                              )
-                            }
+                            onClick={() => handleDeleteTask(task.id)}
                           >
                             ×
                           </button>
@@ -925,100 +928,58 @@ const selectedDayLocked = isPastDate
         <section className="timeline-section">
           <div className="timeline-heading">
             <div>
-              <span className="eyebrow">
-                YOUR JOURNEY
-              </span>
+              <span className="eyebrow">YOUR JOURNEY</span>
 
               <h2>92 days. One day at a time.</h2>
             </div>
 
-            <p>
-              Completed days are marked ✓
-            </p>
+            <p>Completed days are marked ✓</p>
           </div>
 
           <div className="date-timeline">
             {challengeDates.map((date) => {
-              const dateString =
-                formatDate(date);
+              const dateString = formatDate(date);
 
-              const activeTasks =
-                tasks.filter((task) => {
-                  const taskStartDate =
-                    task.startDate ||
-                    formatDate(START_DATE);
+              const activeTasks = tasks.filter((task) => {
+                const taskStartDate = task.startDate || formatDate(START_DATE);
 
-                  return (
-                    taskStartDate <= dateString
-                  );
-                });
+                return taskStartDate <= dateString;
+              });
 
-              const completedCount =
-                activeTasks.filter((task) => {
-                  const key = `${dateString}_${task.id}`;
+              const completedCount = activeTasks.filter((task) => {
+                const key = `${dateString}_${task.id}`;
 
-                  return completions[key]
-                    ?.completed;
-                }).length;
+                return completions[key]?.completed;
+              }).length;
 
               const isComplete =
-                activeTasks.length > 0 &&
-                completedCount ===
-                  activeTasks.length;
+                activeTasks.length > 0 && completedCount === activeTasks.length;
 
-              const isSelected =
-                dateString === selectedDate;
+              const isSelected = dateString === selectedDate;
 
-              const isToday =
-                dateString === today;
+              const isToday = dateString === today;
 
               return (
                 <button
                   key={dateString}
-                  className={`timeline-day ${
-                    isSelected
-                      ? "selected"
-                      : ""
-                  } ${
-                    isComplete
-                      ? "complete"
-                      : ""
-                  } ${
-                    isToday
-                      ? "today"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    setSelectedDate(
-                      dateString
-                    )
-                  }
+                  className={`timeline-day ${isSelected ? "selected" : ""} ${
+                    isComplete ? "complete" : ""
+                  } ${isToday ? "today" : ""}`}
+                  onClick={() => setSelectedDate(dateString)}
                 >
-                  <span className="timeline-number">
-                    {date.getDate()}
-                  </span>
+                  <span className="timeline-number">{date.getDate()}</span>
 
                   <span className="timeline-month">
-                    {date.toLocaleDateString(
-                      "en-US",
-                      {
-                        month: "short",
-                      }
-                    )}
+                    {date.toLocaleDateString("en-US", {
+                      month: "short",
+                    })}
                   </span>
 
-                  {isComplete && (
-                    <span className="timeline-check">
-                      ✓
-                    </span>
-                  )}
+                  {isComplete && <span className="timeline-check">✓</span>}
 
-                  {!isComplete &&
-                    dateString < today && (
-                      <span className="timeline-missed">
-                        —
-                      </span>
-                    )}
+                  {!isComplete && dateString < today && (
+                    <span className="timeline-missed">—</span>
+                  )}
                 </button>
               );
             })}
